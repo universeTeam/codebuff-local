@@ -100,7 +100,7 @@ Set a large `principal` and `balance` on an active (non-expired) row.
 
 ### 7) Use local models (OpenAI-compatible server)
 
-Run an OpenAI-compatible server locally using CLI Proxy.
+Run an OpenAI-compatible server locally.
 
 Codebuff expects an OpenAI-compatible API with a `/v1` base URL and a chat completions endpoint:
 
@@ -109,6 +109,15 @@ Codebuff expects an OpenAI-compatible API with a `/v1` base URL and a chat compl
 Example base URL:
 
 - `http://localhost:8317/v1`
+
+Verify your server works (replace the model id with one your server supports):
+
+```bash
+curl -s http://localhost:8317/v1/chat/completions \
+  -H 'Authorization: Bearer factory-api-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-5.1-codex-max","messages":[{"role":"user","content":"hi"}]}'
+```
 
 
 To force Codebuff to use your local model for all agent runs, add this to `.env.local`:
@@ -120,6 +129,40 @@ OPENAI_API_KEY=factory-api-key
 CODEBUFF_MODEL_OVERRIDE=gpt-5.1-codex-max
 CODEBUFF_PROVIDER_OVERRIDE=openai
 ```
+
+#### Add new custom models
+
+There are two common ways to add/switch models.
+
+**A) Global override (recommended for local model servers)**
+
+- Set `CODEBUFF_MODEL_OVERRIDE` to the model id your server supports.
+- Restart the stack after changing env.
+
+Examples:
+
+```bash
+# If your server expects a bare model id
+CODEBUFF_MODEL_OVERRIDE=gpt-5.1-codex-max
+CODEBUFF_PROVIDER_OVERRIDE=openai
+
+# Or specify the full provider/model string
+CODEBUFF_MODEL_OVERRIDE=openai/gpt-5.1-codex-max
+```
+
+Notes:
+
+- You do not need to “register” the model anywhere in Codebuff as long as the upstream provider accepts the `model` string.
+- If you set the override to an `anthropic/*`, `google/*`, etc. model, the request will go to OpenRouter and you must set a valid `OPEN_ROUTER_API_KEY`.
+
+**B) Per-agent defaults (edit agent templates in this repo)**
+
+Each agent definition has a `model` field. To change what an agent uses by default:
+
+- Base agents: `.agents/base/*` (example: `.agents/base/base.ts`)
+- Other agents: `.agents/<agent-name>/*`
+
+If you are using a local OpenAI-compatible server, set the model to `openai/<model-id>`.
 
 Restart after changing env:
 
@@ -152,4 +195,3 @@ bun run start-cli -- publish base context-pruner file-explorer file-picker resea
 ```bash
 bun run start-cli -- --cwd /path/to/other/repo
 ```
-
