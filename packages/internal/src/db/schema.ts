@@ -1,6 +1,7 @@
 import { GrantTypeValues } from '@codebuff/common/types/grant'
 import { sql } from 'drizzle-orm'
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -110,8 +111,8 @@ export const creditLedger = pgTable(
     user_id: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    principal: integer('principal').notNull(),
-    balance: integer('balance').notNull(),
+    principal: bigint('principal', { mode: 'number' }).notNull(),
+    balance: bigint('balance', { mode: 'number' }).notNull(),
     type: grantTypeEnum('type').notNull(),
     description: text('description'),
     priority: integer('priority').notNull(),

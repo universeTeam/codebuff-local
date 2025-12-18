@@ -18,6 +18,8 @@ export const getCiEnv = (): CiEnv => ({
   IS_PULL_REQUEST: process.env.IS_PULL_REQUEST,
   CODEBUFF_GITHUB_TOKEN: process.env.CODEBUFF_GITHUB_TOKEN,
   CODEBUFF_API_KEY: process.env.CODEBUFF_API_KEY,
+  CODEBUFF_MODEL_OVERRIDE: process.env.CODEBUFF_MODEL_OVERRIDE,
+  CODEBUFF_PROVIDER_OVERRIDE: process.env.CODEBUFF_PROVIDER_OVERRIDE,
 })
 
 /**
@@ -44,5 +46,7 @@ export const createTestCiEnv = (overrides: Partial<CiEnv> = {}): CiEnv => ({
   IS_PULL_REQUEST: undefined,
   CODEBUFF_GITHUB_TOKEN: undefined,
   CODEBUFF_API_KEY: 'test-api-key',
+  CODEBUFF_MODEL_OVERRIDE: undefined,
+  CODEBUFF_PROVIDER_OVERRIDE: undefined,
   ...overrides,
 })

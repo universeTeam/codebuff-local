@@ -7,3 +7,6 @@ debug/
 
 # Generated files
 src/agents/bundled-agents.generated.ts
+
+# Temp build artifacts
+.tmp-codebuff-cli-tsc-*

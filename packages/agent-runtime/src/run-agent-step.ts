@@ -25,6 +25,7 @@ import {
   expireMessages,
 } from './util/messages'
 import { countTokensJson } from './util/token-counter'
+import { getEffectiveAgentModel } from './util/effective-model'
 
 import type { AgentResponseTrace } from '@codebuff/bigquery'
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
@@ -60,6 +61,7 @@ import type {
   ProjectFileContext,
 } from '@codebuff/common/util/file'
 import { APICallError, type ToolSet } from 'ai'
+import type { CiEnv } from '@codebuff/common/types/contracts/env'
 
 async function additionalToolDefinitions(
   params: {
@@ -95,6 +97,8 @@ export const runAgentStep = async (
     fingerprintId: string
     repoId: string | undefined
     onResponseChunk: (chunk: string | PrintModeEvent) => void
+
+    ciEnv: CiEnv
 
     agentType: AgentTemplateType
     fileContext: ProjectFileContext
@@ -232,9 +236,18 @@ export const runAgentStep = async (
     )
   }
 
+  const effectiveModel = getEffectiveAgentModel({
+    templateModel: agentTemplate.model,
+    ciEnv: params.ciEnv,
+  })
+  const agentTemplateWithModel =
+    effectiveModel === agentTemplate.model
+      ? agentTemplate
+      : { ...agentTemplate, model: effectiveModel }
+
   const stepPrompt = await getAgentPrompt({
     ...params,
-    agentTemplate,
+    agentTemplate: agentTemplateWithModel,
     promptType: { type: 'stepPrompt' },
     fileContext,
     agentState,
@@ -268,7 +281,7 @@ export const runAgentStep = async (
     }
   }
 
-  const { model } = agentTemplate
+  const { model } = agentTemplateWithModel
 
   let stepCreditsUsed = 0
 
@@ -293,7 +306,7 @@ export const runAgentStep = async (
       params: spawnParams,
       agentContext,
       systemTokens,
-      agentTemplate,
+      agentTemplate: agentTemplateWithModel,
       tools: params.tools,
     },
     `Start agent ${agentType} step ${iterationNum} (${userInputId}${prompt ? ` - Prompt: ${prompt.slice(0, 20)}` : ''})`,
@@ -345,9 +358,9 @@ export const runAgentStep = async (
   const stream = getAgentStreamFromTemplate({
     ...params,
     agentId: agentState.parentId ? agentState.agentId : undefined,
-    includeCacheControl: supportsCacheControl(agentTemplate.model),
+    includeCacheControl: supportsCacheControl(model),
     messages: [systemMessage(system), ...agentState.messageHistory],
-    template: agentTemplate,
+    template: agentTemplateWithModel,
     onCostCalculated,
   })
 
@@ -363,7 +376,7 @@ export const runAgentStep = async (
     agentContext,
     agentState,
     agentStepId,
-    agentTemplate,
+    agentTemplate: agentTemplateWithModel,
     fullResponse,
     messages: agentState.messageHistory,
     repoId,
@@ -426,7 +439,7 @@ export const runAgentStep = async (
 
   // If the agent has the task_completed tool, it must be called to end its turn.
   const requiresExplicitCompletion =
-    agentTemplate.toolNames.includes('task_completed')
+    agentTemplateWithModel.toolNames.includes('task_completed')
 
   let shouldEndTurn: boolean
   if (requiresExplicitCompletion) {

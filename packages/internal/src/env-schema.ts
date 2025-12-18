@@ -5,6 +5,9 @@ export const serverEnvSchema = clientEnvSchema.extend({
   // LLM API keys
   OPEN_ROUTER_API_KEY: z.string().min(1),
   OPENAI_API_KEY: z.string().min(1),
+  OPENAI_BASE_URL: z.url().optional(),
+  CODEBUFF_MODEL_OVERRIDE: z.string().optional(),
+  CODEBUFF_PROVIDER_OVERRIDE: z.string().optional(),
   LINKUP_API_KEY: z.string().min(1),
   CONTEXT7_API_KEY: z.string().optional(),
   PORT: z.coerce.number().min(1000),
@@ -43,6 +46,9 @@ export const serverProcessEnv: ServerInput = {
   // LLM API keys
   OPEN_ROUTER_API_KEY: process.env.OPEN_ROUTER_API_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+  CODEBUFF_MODEL_OVERRIDE: process.env.CODEBUFF_MODEL_OVERRIDE,
+  CODEBUFF_PROVIDER_OVERRIDE: process.env.CODEBUFF_PROVIDER_OVERRIDE,
   LINKUP_API_KEY: process.env.LINKUP_API_KEY,
   CONTEXT7_API_KEY: process.env.CONTEXT7_API_KEY,
   PORT: process.env.PORT,

@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server'
 
 import {
   handleOpenAINonStream,
+  handleOpenAIStream,
   OPENAI_SUPPORTED_MODELS,
 } from '@/llm-api/openai'
 import {
@@ -106,6 +107,23 @@ export async function postChatCompletions(params: {
         { message: 'Invalid JSON in request body' },
         { status: 400 },
       )
+    }
+
+    // Optional: force a single model for all requests (useful for local dev).
+    // This happens server-side so it works even if the client/SDK is still
+    // sending template-provided models.
+    const modelOverride = env.CODEBUFF_MODEL_OVERRIDE?.trim()
+    if (modelOverride) {
+      const providerOverride = env.CODEBUFF_PROVIDER_OVERRIDE?.trim().replace(
+        /\/+$/,
+        '',
+      )
+      const effectiveModel = modelOverride.includes('/')
+        ? modelOverride
+        : providerOverride
+          ? `${providerOverride}/${modelOverride}`
+          : modelOverride
+      body.model = effectiveModel
     }
 
     const bodyStream = 'stream' in body && body.stream
@@ -266,15 +284,32 @@ export async function postChatCompletions(params: {
     try {
       if (bodyStream) {
         // Streaming request
-        const stream = await handleOpenRouterStream({
-          body,
-          userId,
-          agentId,
-          openrouterApiKey,
-          fetch,
-          logger,
-          insertMessageBigquery,
-        })
+        const model = (body as any)?.model
+        const openaiBaseUrl = (env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1')
+          .replace(/\/+$/, '')
+        const shouldUseOpenAIEndpoint =
+          typeof model === 'string' &&
+          model.startsWith('openai/') &&
+          openaiBaseUrl !== 'https://api.openai.com/v1'
+
+        const stream = await (shouldUseOpenAIEndpoint
+          ? handleOpenAIStream({
+              body,
+              userId,
+              agentId,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            })
+          : handleOpenRouterStream({
+              body,
+              userId,
+              agentId,
+              openrouterApiKey,
+              fetch,
+              logger,
+              insertMessageBigquery,
+            }))
 
         trackEvent({
           event: AnalyticsEvent.CHAT_COMPLETIONS_STREAM_STARTED,
@@ -299,14 +334,19 @@ export async function postChatCompletions(params: {
         const model = (body as any)?.model
         const shortModelName =
           typeof model === 'string' ? model.split('/')[1] : undefined
-        const isOpenAIDirectModel =
-          typeof model === 'string' &&
-          model.startsWith('openai/') &&
-          OPENAI_SUPPORTED_MODELS.includes(shortModelName as any)
-        // Only use OpenAI endpoint for OpenAI models with n parameter
-        // All other models (including non-OpenAI with n parameter) should use OpenRouter
+        const openaiBaseUrl = (env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1')
+          .replace(/\/+$/, '')
+        const isCustomOpenAIBaseUrl = openaiBaseUrl !== 'https://api.openai.com/v1'
+        const isOpenAIModel = typeof model === 'string' && model.startsWith('openai/')
+        const isOpenAIDirectModelSupported =
+          isOpenAIModel && OPENAI_SUPPORTED_MODELS.includes(shortModelName as any)
+        // Use OpenAI endpoint for openai/* models when a custom OPENAI_BASE_URL is configured.
+        // Otherwise, keep historical behavior: only use OpenAI direct for supported models
+        // when requesting `n` responses.
         const shouldUseOpenAIEndpoint =
-          isOpenAIDirectModel && (body as any)?.codebuff_metadata?.n
+          isOpenAIModel &&
+          (isCustomOpenAIBaseUrl ||
+            (isOpenAIDirectModelSupported && (body as any)?.codebuff_metadata?.n))
 
         const result = await (shouldUseOpenAIEndpoint
           ? handleOpenAINonStream({

@@ -160,6 +160,30 @@ describe('n parameter and GENERATE_N functionality', () => {
       expect(result.messageId).toBe(null)
     })
 
+    it('should apply CODEBUFF_MODEL_OVERRIDE when calling promptAiSdk (n path)', async () => {
+      runAgentStepBaseParams.ciEnv = {
+        ...runAgentStepBaseParams.ciEnv,
+        CODEBUFF_MODEL_OVERRIDE: 'gpt-5.1-codex-max',
+        CODEBUFF_PROVIDER_OVERRIDE: 'openai',
+      }
+
+      runAgentStepBaseParams.promptAiSdk = mock(async () =>
+        JSON.stringify(['Response 1', 'Response 2']),
+      )
+
+      await runAgentStep({
+        ...runAgentStepBaseParams,
+        n: 2,
+      })
+
+      expect(runAgentStepBaseParams.promptAiSdk).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'openai/gpt-5.1-codex-max',
+          n: 2,
+        }),
+      )
+    })
+
     it('should return early without calling promptAiSdkStream when n is provided', async () => {
       runAgentStepBaseParams.promptAiSdkStream = mock(async function* () {
         yield { type: 'text' as const, text: 'Should not be called' }
@@ -206,6 +230,12 @@ describe('n parameter and GENERATE_N functionality', () => {
         async () => 'Should not be called',
       )
 
+      runAgentStepBaseParams.ciEnv = {
+        ...runAgentStepBaseParams.ciEnv,
+        CODEBUFF_MODEL_OVERRIDE: 'gpt-5.1-codex-max',
+        CODEBUFF_PROVIDER_OVERRIDE: 'openai',
+      }
+
       runAgentStepBaseParams.promptAiSdkStream = mock(async function* () {
         yield { type: 'text' as const, text: 'Normal response' }
         return 'mock-message-id'
@@ -218,6 +248,12 @@ describe('n parameter and GENERATE_N functionality', () => {
 
       // Verify promptAiSdk was NOT called
       expect(runAgentStepBaseParams.promptAiSdk).not.toHaveBeenCalled()
+
+      expect(runAgentStepBaseParams.promptAiSdkStream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'openai/gpt-5.1-codex-max',
+        }),
+      )
       // Verify stream was called
       expect(runAgentStepBaseParams.promptAiSdkStream).toHaveBeenCalled()
       // nResponses should be undefined in normal flow

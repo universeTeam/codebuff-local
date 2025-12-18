@@ -19,6 +19,9 @@ tsconfig.tsbuildinfo
 __mock-projects__
 npm-app/src/__tests__/data/
 .aider*
+
+# Code (Codex CLI fork) workspace artifacts
+.code/
 .codebuff*
 **.log
 
@@ -30,3 +33,5 @@ debug/
 
 # Infisical config (user-specific)
 .infisical.json
+AGENTS.md
+.env.local

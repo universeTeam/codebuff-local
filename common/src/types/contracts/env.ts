@@ -86,6 +86,19 @@ export type BaseEnv = {
 export type CiEnv = BaseCiEnv & {
   CODEBUFF_GITHUB_TOKEN?: string
   CODEBUFF_API_KEY?: string
+  /**
+   * Optional: overrides the model used for all agents.
+   *
+   * If this string contains a provider prefix (e.g. `openai/gpt-5.1`), it is
+   * treated as a full model identifier.
+   */
+  CODEBUFF_MODEL_OVERRIDE?: string
+
+  /**
+   * Optional: provider prefix to apply when CODEBUFF_MODEL_OVERRIDE does not
+   * include a provider (e.g. `openai`).
+   */
+  CODEBUFF_PROVIDER_OVERRIDE?: string
   EVAL_RESULTS_EMAIL?: string
 }
 

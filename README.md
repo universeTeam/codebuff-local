@@ -1,245 +1,155 @@
 # Codebuff
 
-Codebuff is an **open-source AI coding assistant** that edits your codebase through natural language instructions. Instead of using one model for everything, it coordinates specialized agents that work together to understand your project and make precise changes.
+Codebuff is an open-source AI coding assistant.
 
-<div align="center">
-  <img src="./assets/codebuff-vs-claude-code.png" alt="Codebuff vs Claude Code" width="400">
-</div>
+- The CLI runs in your terminal.
+- A local web server handles authentication, billing, and agent publishing.
 
-Codebuff beats Claude Code at 61% vs 53% on [our evals](evals/README.md) across 175+ coding tasks over multiple open-source repos that simulate real-world tasks.
+This repository is a Bun monorepo. The instructions below are for running the full stack locally.
 
-![Codebuff Demo](./assets/demo.gif)
+## Local development quickstart
 
-## How it works
+### Prerequisites
 
-When you ask Codebuff to "add authentication to my API," it might invoke:
+- Bun (see `package.json` engines)
+- Docker (for the local Postgres database)
+- A GitHub account (for local login)
 
-1. A **File Explorer Agent** to scan your codebase to understand the architecture and find relevant files
-2. A **Planner Agent** to plan which files need changes and in what order
-3. An **Editor Agent** to make precise edits
-4. A **Reviewer Agent** to validate changes
-
-<div align="center">
-  <img src="./assets/multi-agents.png" alt="Codebuff Multi-Agents" width="250">
-</div>
-
-This multi-agent approach gives you better context understanding, more accurate edits, and fewer errors compared to single-model tools.
-
-## CLI: Install and start coding
-
-Install:
+### 1) Configure `.env.local`
 
 ```bash
-npm install -g codebuff
+cp .env.example .env.local
 ```
 
-Run:
+Pick a port and keep these values consistent:
 
 ```bash
-cd your-project
-codebuff
+PORT=3101
+NEXT_PUBLIC_WEB_PORT=3101
+NEXT_PUBLIC_CODEBUFF_APP_URL=http://localhost:3101
+NEXTAUTH_URL=http://localhost:3101
 ```
 
-Then just tell Codebuff what you want and it handles the rest:
 
-- "Fix the SQL injection vulnerability in user registration"
-- "Add rate limiting to all API endpoints"
-- "Refactor the database connection code for better performance"
 
-Codebuff will find the right files, makes changes across your codebase, and runs tests to make sure nothing breaks.
+### 2) Create a GitHub OAuth App (required for login)
 
-### CLI Options
+Go to GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App**
 
-Control how Codebuff runs with these flags:
+Use these values (replace the port if you chose a different one):
 
-**Quality & Performance**:
-- `--lite` - Use budget models and fetch fewer files (faster, lower cost)
-- `--max` - Use higher quality models and fetch more files (thorough, slower)
+- Application name: `codebuff-local`
+- Homepage URL: `http://localhost:3101`
+- Application description: `codebuff-local`
+- Authorization callback URL: `http://localhost:3101/api/auth/callback/github`
+- Enable Device Flow: enabled
 
-**Modes**:
-- `--ask` - Ask mode, won't change code (safe for exploration)
-- `--print, -p` - Print-only mode, run once and exit (for scripts/CI)
-
-**Agent Control**:
-- `--agent <id>` - Run specific agent (e.g., `--agent file-picker`)
-- `--spawn <id>` - Spawn agent directly (e.g., `--spawn reviewer`)
-- `--params <json>` - Pass JSON parameters to agent
-
-**Debugging**:
-- `--trace` - Log all subagent activity to `.agents/traces/*.log`
-- `--cwd <dir>` - Run in specific directory instead of current
-
-**Project Setup**:
-- `--init` - Initialize Codebuff for your project
-- `--create <template>` - Create new project from template
-
-Run `codebuff --help` for full details and examples.
-
-## Create custom agents
-
-To get started building your own agents, run:
+Copy the **Client ID** and generate a **Client secret**, then set:
 
 ```bash
-codebuff init-agents
+CODEBUFF_GITHUB_ID=<your-client-id>
+CODEBUFF_GITHUB_SECRET=<your-client-secret>
 ```
 
-> 💡 **Tip**: This creates an agent development guide at `.agents/README.md` with examples and TypeScript types.
 
-This creates:
-```
-.agents/
-├── README.md              # Agent development guide
-├── my-custom-agent.ts     # Working agent template
-├── package.json           # NPM package config
-├── LICENSE                # Apache-2.0 license
-├── examples/              # 3 example agents
-└── types/                 # TypeScript definitions
-```
-
-You can write agent definition files that give you maximum control over agent behavior.
-
-Implement your workflows by specifying tools, which agents can be spawned, and prompts. We even have TypeScript generators for more programmatic control.
-
-For example, here's a `git-committer` agent that creates git commits based on the current git state. Notice that it runs `git diff` and `git log` to analyze changes, but then hands control over to the LLM to craft a meaningful commit message and perform the actual commit.
-
-```typescript
-export default {
-  id: 'git-committer',
-  displayName: 'Git Committer',
-  model: 'openai/gpt-5-nano',
-  toolNames: ['read_files', 'run_terminal_command', 'end_turn'],
-
-  instructionsPrompt:
-    'You create meaningful git commits by analyzing changes, reading relevant files for context, and crafting clear commit messages that explain the "why" behind changes.',
-
-  async *handleSteps() {
-    // Analyze what changed
-    yield { tool: 'run_terminal_command', command: 'git diff' }
-    yield { tool: 'run_terminal_command', command: 'git log --oneline -5' }
-
-    // Stage files and create commit with good message
-    yield 'STEP_ALL'
-  },
-}
-```
-
-## SDK: Run agents in production
-
-Install the [SDK package](https://www.npmjs.com/package/@codebuff/sdk) -- note this is different than the CLI codebuff package.
+### 3) Install dependencies
 
 ```bash
-npm install @codebuff/sdk
+bun install
 ```
 
-Import the client and run agents!
+### 4) Start the stack
 
-```typescript
-import { CodebuffClient } from '@codebuff/sdk'
-
-// 1. Initialize the client
-const client = new CodebuffClient({
-  apiKey: 'your-api-key',
-  cwd: '/path/to/your/project',
-  onError: (error) => console.error('Codebuff error:', error.message),
-})
-
-// 2. Do a coding task...
-const result = await client.run({
-  agent: 'base', // Codebuff's base coding agent
-  prompt: 'Add error handling to all API endpoints',
-  handleEvent: (event) => {
-    console.log('Progress', event)
-  },
-})
-
-// 3. Or, run a custom agent!
-const myCustomAgent: AgentDefinition = {
-  id: 'greeter',
-  displayName: 'Greeter',
-  model: 'openai/gpt-5.1',
-  instructionsPrompt: 'Say hello!',
-}
-await client.run({
-  agent: 'greeter',
-  agentDefinitions: [myCustomAgent],
-  prompt: 'My name is Bob.',
-  customToolDefinitions: [], // Add custom tools too!
-  handleEvent: (event) => {
-    console.log('Progress', event)
-  },
-})
-```
-
-Learn more about the SDK [here](https://www.npmjs.com/package/@codebuff/sdk).
-
-## Why choose Codebuff
-
-**Custom workflows**: TypeScript generators let you mix AI generation with programmatic control. Agents can spawn subagents, branch on conditions, and run multi-step processes.
-
-**Any model on OpenRouter**: Unlike Claude Code which locks you into Anthropic's models, Codebuff supports any model available on [OpenRouter](https://openrouter.ai/models) - from Claude and GPT to specialized models like Qwen, DeepSeek, and others. Switch models for different tasks or use the latest releases without waiting for platform updates.
-
-**Reuse any published agent**: Compose existing [published agents](https://www.codebuff.com/store) to get a leg up. Codebuff agents are the new MCP!
-
-**SDK**: Build Codebuff into your applications. Create custom tools, integrate with CI/CD, or embed coding assistance into your products.
-
-## Contributing to Codebuff
-
-We ❤️ contributions from the community - whether you're fixing bugs, tweaking our agents, or improving documentation.
-
-**Want to contribute?** Check out our [Contributing Guide](./CONTRIBUTING.md) to get started.
-
-### Running Tests
-
-To run the test suite:
+Option A (recommended): start services and the CLI together.
 
 ```bash
-cd cli
-bun test
+bun run dev
 ```
 
-**For interactive E2E testing**, install tmux:
+Option B: background services + separate CLI.
 
 ```bash
-# macOS
-brew install tmux
-
-# Ubuntu/Debian
-sudo apt-get install tmux
-
-# Windows (via WSL)
-wsl --install
-sudo apt-get install tmux
+bun run up
+bun run start-cli
 ```
 
-See [cli/src/__tests__/README.md](cli/src/__tests__/README.md) for comprehensive testing documentation.
+Stop background services:
 
-Some ways you can help:
+```bash
+bun run down
+```
 
-- 🐛 **Fix bugs** or add features
-- 🤖 **Create specialized agents** and publish them to the Agent Store
-- 📚 **Improve documentation** or write tutorials
-- 💡 **Share ideas** in our [GitHub Issues](https://github.com/CodebuffAI/codebuff/issues)
+### 5) Log in
 
-## Get started
+Open `http://localhost:<port>/login` and sign in with GitHub.
 
-### Install
+The CLI will also prompt you with a login URL when it needs authentication.
 
-**CLI**: `npm install -g codebuff`
+### 6) Add credits (local dev)
 
-**SDK**: `npm install @codebuff/sdk`
+Local runs still use billing, so your user needs credits.
 
-### Resources
+Start Drizzle Studio:
 
-**Documentation**: [codebuff.com/docs](https://codebuff.com/docs)
+```bash
+bun run start-studio
+```
 
-**Community**: [Discord](https://codebuff.com/discord)
+Then open `https://local.drizzle.studio/` and edit the `credit_ledger` table for your user.
+Set a large `principal` and `balance` on an active (non-expired) row.
 
-**Issues & Ideas**: [GitHub Issues](https://github.com/CodebuffAI/codebuff/issues)
+### 7) Use local models (OpenAI-compatible server)
 
-**Contributing**: [CONTRIBUTING.md](./CONTRIBUTING.md) - Start here to contribute!
+Run an OpenAI-compatible server locally using CLI Proxy.
 
-**Support**: [support@codebuff.com](mailto:support@codebuff.com)
+Codebuff expects an OpenAI-compatible API with a `/v1` base URL and a chat completions endpoint:
 
-## Star History
+- `POST /v1/chat/completions`
 
-[![Star History Chart](https://api.star-history.com/svg?repos=CodebuffAI/codebuff&type=Date)](https://www.star-history.com/#CodebuffAI/codebuff&Date)
+Example base URL:
+
+- `http://localhost:8317/v1`
+
+
+To force Codebuff to use your local model for all agent runs, add this to `.env.local`:
+
+```bash
+OPENAI_BASE_URL=http://localhost:8317/v1
+OPENAI_API_KEY=factory-api-key
+
+CODEBUFF_MODEL_OVERRIDE=gpt-5.1-codex-max
+CODEBUFF_PROVIDER_OVERRIDE=openai
+```
+
+Restart after changing env:
+
+```bash
+bun run down
+bun run up
+```
+
+Troubleshooting
+
+- If you see `No cookie auth credentials found`, that is an OpenRouter 401.
+  It means the request is still being routed to OpenRouter (for example, the model is `anthropic/*`).
+  Fix it by either setting a real `OPEN_ROUTER_API_KEY` or forcing the local model override above.
+
+### 8) Publish/import local agents so the CLI works in other directories
+
+When running the CLI outside this repo, agent templates must be present in the database.
+
+1) Create a publisher profile at `http://localhost:<port>/publishers`.
+   Use publisher id `codebuff`.
+
+2) Publish agents (repeat and add more agent ids if you get an "Invalid agent ID" error):
+
+```bash
+bun run start-cli -- publish base context-pruner file-explorer file-picker researcher thinker reviewer
+```
+
+3) Run the CLI against any directory:
+
+```bash
+bun run start-cli -- --cwd /path/to/other/repo
+```
+

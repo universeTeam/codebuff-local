@@ -136,6 +136,7 @@ async function main() {
   runCommand('bun', ['run', 'build:sdk'], { cwd: cliRoot, env: process.env })
 
   patchOpenTuiAssetPaths()
+  patchOpenTuiReactJsxDevRuntime()
   await ensureOpenTuiNativeBundle(targetInfo)
 
   const outputFilename =
@@ -158,31 +159,72 @@ async function main() {
     ...nextPublicEnvVars,
   ]
 
-  const buildArgs = [
-    'build',
-    'src/index.tsx',
-    '--compile',
-    `--target=${targetInfo.bunTarget}`,
-    `--outfile=${outputFile}`,
-    '--sourcemap=none',
-    ...defineFlags.flatMap(([key, value]) => ['--define', `${key}=${value}`]),
-    '--env "NEXT_PUBLIC_*"', // Copies all current env vars in process.env to the compiled binary that match the pattern.
-  ]
+  // Bun's bundler currently emits `jsxDEV(...)` calls for TSX/JSX.
+  // React 19 intentionally makes `react/jsx-dev-runtime` export `jsxDEV` as
+  // undefined when NODE_ENV=production, so a production binary would crash.
+  //
+  // To build a stable production binary:
+  // 1) transpile TS/TSX with TypeScript (tsx -> `jsx/jsxs` calls)
+  // 2) bundle/compile the emitted JS with Bun
+  const emitRoot = mkdtempSync(join(cliRoot, '.tmp-codebuff-cli-tsc-'))
+  const tscOutDir = join(emitRoot, 'dist')
+  const tscProject = join(cliRoot, 'tsconfig.emit.json')
 
-  log(
-    `bun ${buildArgs
-      .map((arg) => (arg.includes(' ') ? `"${arg}"` : arg))
-      .join(' ')}`,
-  )
+  try {
+    runCommand(
+      'bunx',
+      ['tsc', '-p', tscProject, '--outDir', tscOutDir, '--rootDir', repoRoot],
+      { cwd: cliRoot, env: process.env },
+    )
 
-  runCommand('bun', buildArgs, { cwd: cliRoot })
+    const entryPoint = join(tscOutDir, 'cli', 'src', 'index.js')
+    if (!existsSync(entryPoint)) {
+      throw new Error(
+        `TypeScript emit failed: expected entry point at ${entryPoint}`,
+      )
+    }
+
+    const buildArgs = [
+      'build',
+      entryPoint,
+      '--compile',
+      `--target=${targetInfo.bunTarget}`,
+      `--outfile=${outputFile}`,
+      '--sourcemap=none',
+      ...defineFlags.flatMap(([key, value]) => ['--define', `${key}=${value}`]),
+    ]
+
+    log(
+      `bun ${buildArgs
+        .map((arg) => (arg.includes(' ') ? `"${arg}"` : arg))
+        .join(' ')}`,
+    )
+
+    runCommand('bun', buildArgs, { cwd: cliRoot, env: process.env })
+  } finally {
+    try {
+      rmSync(emitRoot, { recursive: true, force: true })
+    } catch {
+      // ignore cleanup failures
+    }
+  }
 
   if (targetInfo.platform !== 'win32') {
     chmodSync(outputFile, 0o755)
   }
 
+  const binary = readFileSync(outputFile)
+  if (
+    binary.includes(Buffer.from('import_jsx_dev_runtime')) ||
+    binary.includes(Buffer.from('jsxDEV('))
+  ) {
+    throw new Error(
+      'Built binary still contains jsxDEV call sites. This typically indicates that JSX was compiled in dev mode and will crash under React 19 when NODE_ENV=production.',
+    )
+  }
+
   logAlways(
-    `✅ Built ${outputFilename} (${targetInfo.platform}-${targetInfo.arch})`,
+    `Built ${outputFilename} (${targetInfo.platform}-${targetInfo.arch})`,
   )
 }
 
@@ -227,6 +269,82 @@ function patchOpenTuiAssetPaths() {
   const patched = content.replace(absolutePathPattern, replacement)
   writeFileSync(indexPath, patched)
   logAlways('Patched OpenTUI core tree-sitter asset paths')
+}
+
+function patchOpenTuiReactJsxDevRuntime() {
+  const reactTargets = [
+    {
+      label: 'workspace root',
+      packageDir: join(repoRoot, 'node_modules', '@opentui', 'react'),
+    },
+    {
+      label: 'CLI workspace',
+      packageDir: join(cliRoot, 'node_modules', '@opentui', 'react'),
+    },
+  ]
+
+  const filesToPatch = [
+    { relPath: 'index.js', description: 'main bundle' },
+    { relPath: join('src', 'reconciler', 'renderer.js'), description: 'renderer bundle' },
+  ]
+
+  for (const target of reactTargets) {
+    for (const file of filesToPatch) {
+      const filePath = join(target.packageDir, file.relPath)
+      if (!existsSync(filePath)) continue
+
+      const content = readFileSync(filePath, 'utf8')
+      if (!content.includes('react/jsx-dev-runtime') && !content.includes('jsxDEV')) {
+        continue
+      }
+
+      const devRuntimeImportPattern =
+        /^import\s+\{([^}]*)\}\s+from\s+["']react\/jsx-dev-runtime["'];\s*$/gm
+
+      const patched = content
+        .replace(
+          devRuntimeImportPattern,
+          (match: string, specifierBlock: string) => {
+            if (!/\bjsxDEV\b/.test(specifierBlock)) {
+              return match
+            }
+
+            const fragmentAliasMatch = specifierBlock.match(
+              /\bFragment\s+as\s+([A-Za-z_$][\w$]*)\b/,
+            )
+            const fragmentSpecifier = fragmentAliasMatch
+              ? `Fragment as ${fragmentAliasMatch[1]}`
+              : /\bFragment\b/.test(specifierBlock)
+                ? 'Fragment'
+                : null
+
+            const jsxDevAliasMatch = specifierBlock.match(
+              /\bjsxDEV\s+as\s+([A-Za-z_$][\w$]*)\b/,
+            )
+            const jsxSpecifier = jsxDevAliasMatch
+              ? `jsx as ${jsxDevAliasMatch[1]}`
+              : 'jsx'
+
+            const runtimeSpecifiers = [fragmentSpecifier, jsxSpecifier].filter(
+              (value): value is string => Boolean(value),
+            )
+            return `import { ${runtimeSpecifiers.join(', ')} } from "react/jsx-runtime";`
+          },
+        )
+        .replace(/\bjsxDEV\(/g, 'jsx(')
+        .replace(
+          /,\s*(?:true|false),\s*(?:undefined|void 0|null),\s*(?:this|undefined|void 0|null)\)/g,
+          ')',
+        )
+
+      if (patched === content) continue
+
+      writeFileSync(filePath, patched)
+      logAlways(
+        `Patched OpenTUI react ${file.description} (${target.label}) to avoid jsxDEV in production builds`,
+      )
+    }
+  }
 }
 
 async function ensureOpenTuiNativeBundle(targetInfo: TargetInfo) {

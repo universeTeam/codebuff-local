@@ -30,7 +30,44 @@ Before you begin, you'll need to install a few tools:
    # DATABASE_URL=postgresql://manicode_user_local:secretpassword_local@localhost:5432/manicode_db_local
    ```
 
+   Make sure the web port and the public app URL match (these values must be consistent with your GitHub OAuth callback URL):
+
+   ```bash
+   # Default (recommended)
+   PORT=3000
+   NEXT_PUBLIC_WEB_PORT=3000
+   NEXT_PUBLIC_CODEBUFF_APP_URL=http://localhost:3000
+
+   # If port 3000 is already in use (example)
+   PORT=3101
+   NEXT_PUBLIC_WEB_PORT=3101
+   NEXT_PUBLIC_CODEBUFF_APP_URL=http://localhost:3101
+   ```
+
    > **Team members**: For shared secrets management, see the [Infisical Setup Guide](./INFISICAL_SETUP_GUIDE.md).
+
+   Optional: force all agents/subagents to use a single model (useful for local OpenAI-compatible servers).
+
+   If you already have a local OpenAI-compatible endpoint running (example: `http://localhost:8317/v1`), add:
+
+   ```bash
+   CODEBUFF_MODEL_OVERRIDE=gpt-5.1-codex-max
+   CODEBUFF_PROVIDER_OVERRIDE=openai
+   OPENAI_BASE_URL=http://localhost:8317/v1
+   OPENAI_API_KEY=factory-api-key
+   ```
+
+   Notes:
+
+   - You can also set `CODEBUFF_MODEL_OVERRIDE=openai/gpt-5.1-codex-max` and omit `CODEBUFF_PROVIDER_OVERRIDE`.
+   - When `OPENAI_BASE_URL` is set to a non-OpenAI URL, requests for `openai/*` models are routed directly to that endpoint (streaming + non-streaming).
+
+   Troubleshooting: if you see `No cookie auth credentials found`
+
+   - This is an **OpenRouter** 401 error (not a GitHub/NextAuth cookie problem).
+   - It happens when the request is routed to OpenRouter (e.g. the model is `anthropic/*`) but you don’t have a valid `OPEN_ROUTER_API_KEY` (or a BYOK OpenRouter key).
+   - If you want to use your local OpenAI-compatible server instead, set `CODEBUFF_MODEL_OVERRIDE`/`CODEBUFF_PROVIDER_OVERRIDE` as above and restart the stack.
+   - If you want to use OpenRouter/Anthropic models, set a real `OPEN_ROUTER_API_KEY`.
 
 3. **Install dependencies**:
 
@@ -38,14 +75,23 @@ Before you begin, you'll need to install a few tools:
    bun install
    ```
 
-4. **Setup a Github OAuth app**
+4. **Set up a GitHub OAuth app (required for login)**
 
-   1. Follow these instructions to set up a [Github OAuth app](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app)
-   2. Add your Github client ID and secret to `.env.local`:
+   Go to GitHub **Settings → Developer settings → OAuth Apps → New OAuth App**.
+
+   Use these values (replace `3101` if you picked a different port):
+
+   - Application name: `codebuff-local`
+   - Homepage URL: `http://localhost:3101`
+   - Application description: `codebuff-local`
+   - Authorization callback URL: `http://localhost:3101/api/auth/callback/github`
+   - Enable Device Flow: enabled
+
+   After creating the app, copy the **Client ID** and generate a **Client secret**, then add them to `.env.local`:
 
    ```bash
-   CODEBUFF_GITHUB_ID=<your-github-app-id-here>
-   CODEBUFF_GITHUB_SECRET=<your-github-app-secret-here>
+   CODEBUFF_GITHUB_ID=<your-client-id>
+   CODEBUFF_GITHUB_SECRET=<your-client-secret>
    ```
 
 5. **Start development services**:
@@ -62,7 +108,7 @@ Before you begin, you'll need to install a few tools:
    ```bash
    # Terminal 1 - Web server (start first)
    bun run start-web
-   # Expected: Ready on http://localhost:3000
+   # Expected: Ready on http://localhost:<port> (matches NEXT_PUBLIC_CODEBUFF_APP_URL)
 
    # Terminal 2 - CLI client (requires web server to be running first)
    bun run start-cli
@@ -75,7 +121,7 @@ Before you begin, you'll need to install a few tools:
 
 6. **Giving yourself credits**:
 
-   1. Log into Codebuff at [http://localhost:3000/login](http://localhost:3000/login)
+   1. Log into Codebuff at `http://localhost:<port>/login` (matches NEXT_PUBLIC_CODEBUFF_APP_URL)
 
    2. Then give yourself lots of credits. Be generous, you're the boss now!
 
@@ -93,7 +139,7 @@ Before you begin, you'll need to install a few tools:
 
 In order to run the CLI from other directories, you need to first publish the agents to the database.
 
-- First, create a publisher profile at http://localhost:3000/publishers. Make sure the `publisher_id` is `codebuff`.
+- First, create a publisher profile at `http://localhost:<port>/publishers` (matches NEXT_PUBLIC_CODEBUFF_APP_URL). Make sure the `publisher_id` is `codebuff`.
 
 - Run:
 
