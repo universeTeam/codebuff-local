@@ -22,8 +22,8 @@ import {
   NetworkError,
   sanitizeErrorMessage,
 } from './errors'
+import { isCodebuffOfflineMode } from './env'
 import { getAgentRuntimeImpl } from './impl/agent-runtime'
-import { getUserInfoFromApiKey } from './impl/database'
 import {
   MAX_RETRIES_PER_MESSAGE,
   RETRY_BACKOFF_BASE_DELAY_MS,
@@ -767,16 +767,18 @@ export async function runOnce({
   const promptId = Math.random().toString(36).substring(2, 15)
 
   // Send input
-  const userInfo = await getUserInfoFromApiKey({
-    ...agentRuntimeImpl,
-    apiKey,
-    fields: ['id'],
-  })
-  if (!userInfo) {
-    return getCancelledRunState('Invalid API key or user not found')
+  let userId = 'local-user'
+  if (!isCodebuffOfflineMode()) {
+    const userInfo = await agentRuntimeImpl.getUserInfoFromApiKey({
+      ...agentRuntimeImpl,
+      apiKey,
+      fields: ['id'],
+    })
+    if (!userInfo) {
+      return getCancelledRunState('Invalid API key or user not found')
+    }
+    userId = userInfo.id
   }
-
-  const userId = userInfo.id
 
   signal?.addEventListener('abort', () => {
     resolve(getCancelledRunState())

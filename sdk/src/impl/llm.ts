@@ -4,7 +4,11 @@ import {
   checkLiveUserInput,
   getLiveUserInputIds,
 } from '@codebuff/agent-runtime/live-user-inputs'
-import { getByokOpenrouterApiKeyFromEnv } from '../env'
+import {
+  getByokOpenrouterApiKeyFromEnv,
+  getCodebuffLlmApiKeyFromEnv,
+  getCodebuffLlmBaseUrlFromEnv,
+} from '../env'
 import {
   BYOK_OPENROUTER_HEADER,
 } from '@codebuff/common/constants/byok'
@@ -79,7 +83,15 @@ function getProviderOptions(params: {
   providerOptions?: Record<string, JSONObject>
   agentProviderOptions?: OpenRouterProviderRoutingOptions
   n?: number
-}): { codebuff: JSONObject } {
+}): Record<string, JSONObject> {
+  const llmBaseUrlOverride = getCodebuffLlmBaseUrlFromEnv()
+  if (llmBaseUrlOverride) {
+    // When using a direct OpenAI-compatible gateway, avoid Codebuff/OpenRouter-specific
+    // provider options (transforms, provider routing, metadata) because many gateways
+    // will reject unknown request fields.
+    return params.providerOptions ?? {}
+  }
+
   const {
     model,
     runId,
@@ -126,6 +138,27 @@ function getAiSdkModel(params: {
   model: string
 }): LanguageModelV2 {
   const { apiKey, model } = params
+
+  const llmBaseUrlOverride = getCodebuffLlmBaseUrlFromEnv()
+  if (llmBaseUrlOverride) {
+    const llmApiKey = getCodebuffLlmApiKeyFromEnv()
+    if (!llmApiKey) {
+      throw new Error(
+        'Missing LLM API key. Set CODEBUFF_LLM_API_KEY (or CODEBUFF_API_KEY) when using CODEBUFF_LLM_BASE_URL.',
+      )
+    }
+
+    const baseURL = llmBaseUrlOverride.replace(/\/+$/, '')
+
+    return new OpenAICompatibleChatLanguageModel(model, {
+      provider: 'openaiCompatible',
+      url: ({ path }) => `${baseURL}${path}`,
+      headers: () => ({
+        Authorization: `Bearer ${llmApiKey}`,
+        'user-agent': `ai-sdk/openai-compatible/${VERSION}/codebuff-local`,
+      }),
+    })
+  }
 
   const openrouterUsage: OpenRouterUsageAccounting = {
     cost: null,

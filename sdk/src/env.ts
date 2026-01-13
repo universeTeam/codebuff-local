@@ -55,6 +55,38 @@ export const getCodebuffApiKeyFromEnv = (): string | undefined => {
   return process.env[API_KEY_ENV_VAR]
 }
 
+const truthyEnv = (value: string | undefined): boolean => {
+  if (!value) return false
+  return value === '1' || value.toLowerCase() === 'true' || value === 'yes'
+}
+
+/**
+ * Optional override for the LLM gateway base URL.
+ *
+ * Expected to be the API root that prefixes OpenAI-compatible paths, e.g.
+ * `https://example.com/v1` (so the SDK will call `${baseUrl}/chat/completions`).
+ */
+export const getCodebuffLlmBaseUrlFromEnv = (): string | undefined => {
+  return process.env.CODEBUFF_LLM_BASE_URL
+}
+
+/**
+ * Optional override for the LLM API key (separate from Codebuff cloud auth).
+ * If not set, we fall back to `CODEBUFF_API_KEY`.
+ */
+export const getCodebuffLlmApiKeyFromEnv = (): string | undefined => {
+  return process.env.CODEBUFF_LLM_API_KEY ?? getCodebuffApiKeyFromEnv()
+}
+
+/**
+ * Offline mode disables Codebuff cloud database calls (user lookup, agent fetch, etc.).
+ *
+ * Enabled when `CODEBUFF_OFFLINE` is truthy, or when `CODEBUFF_LLM_BASE_URL` is set.
+ */
+export const isCodebuffOfflineMode = (): boolean => {
+  return truthyEnv(process.env.CODEBUFF_OFFLINE) || !!getCodebuffLlmBaseUrlFromEnv()
+}
+
 export const getSystemProcessEnv = (): NodeJS.ProcessEnv => {
   return process.env
 }

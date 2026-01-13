@@ -46,12 +46,21 @@ export function resetCodebuffClient(): void {
 
 export async function getCodebuffClient(): Promise<CodebuffClient | null> {
   if (!clientInstance) {
-    const { token: apiKey } = getAuthTokenDetails()
+    const processEnv = getSystemProcessEnv()
+    const llmBaseUrl = processEnv.CODEBUFF_LLM_BASE_URL
+    const llmApiKey = processEnv.CODEBUFF_LLM_API_KEY
+
+    // Prefer explicit LLM API key when using a custom gateway.
+    // Otherwise fall back to normal Codebuff auth token resolution.
+    const { token: authToken } = getAuthTokenDetails()
+    const apiKey = llmApiKey ?? authToken
 
     if (!apiKey) {
       logger.warn(
         {},
-        `No authentication token found. Please run the login flow or set ${API_KEY_ENV_VAR}.`,
+        llmBaseUrl
+          ? `No LLM API key found. Set CODEBUFF_LLM_API_KEY (recommended) or ${API_KEY_ENV_VAR}.`
+          : `No authentication token found. Please run the login flow or set ${API_KEY_ENV_VAR}.`,
       )
       return null
     }

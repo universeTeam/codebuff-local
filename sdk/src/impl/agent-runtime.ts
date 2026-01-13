@@ -7,6 +7,7 @@ import { env as clientEnvDefault } from '@codebuff/common/env'
 import { getCiEnv } from '@codebuff/common/env-ci'
 import { success } from '@codebuff/common/util/error'
 
+import { isCodebuffOfflineMode } from '../env'
 import {
   addAgentStep,
   fetchAgentFromDatabase,
@@ -63,17 +64,36 @@ export function getAgentRuntimeImpl(
     sendSubagentChunk,
   } = params
 
+  const offline = isCodebuffOfflineMode()
+
   return {
     // Environment
     clientEnv,
     ciEnv: getCiEnv(),
 
     // Database
-    getUserInfoFromApiKey,
-    fetchAgentFromDatabase,
-    startAgentRun,
-    finishAgentRun,
-    addAgentStep,
+    getUserInfoFromApiKey: offline
+      ? async ({ fields }) => {
+          const localUser = {
+            id: 'local-user',
+            email: 'local@localhost',
+            discord_id: null,
+            referral_code: null,
+            banned: false,
+          } as const
+          return Object.fromEntries(
+            fields.map((field) => [field, localUser[field]]),
+          ) as any
+        }
+      : getUserInfoFromApiKey,
+    fetchAgentFromDatabase: offline ? async () => null : fetchAgentFromDatabase,
+    startAgentRun: offline
+      ? async () => `local-run-${Math.random().toString(36).slice(2, 10)}`
+      : startAgentRun,
+    finishAgentRun: offline ? async () => {} : finishAgentRun,
+    addAgentStep: offline
+      ? async () => `local-step-${Math.random().toString(36).slice(2, 10)}`
+      : addAgentStep,
 
     // Billing
     consumeCreditsWithFallback: async () =>
