@@ -20,7 +20,7 @@
     "start-cli": "bun --cwd cli dev",
     "start-db": "bun --cwd packages/internal db:start",
     "start-web": "bun start-db && bun --cwd web dev",
-    "start-studio": "bun --cwd packages/internal db:studio",
+    "start-studio": "bun --env-file=./.env.example --env-file=./.env --cwd packages/internal db:studio",
     "down": "bun scripts/stop-services.ts",
     "ps": "bun scripts/status-services.ts",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
